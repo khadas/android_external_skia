@@ -589,6 +589,7 @@ LOCAL_SRC_FILES := \
 
 LOCAL_SHARED_LIBRARIES := \
 	liblog \
+	libcutils \
 	libGLESv2 \
 	libEGL \
 	libz \
@@ -658,6 +659,7 @@ LOCAL_MODULE := \
 
 LOCAL_SRC_FILES_arm += \
 	src/core/SkUtilsArm.cpp \
+	src/opts/memset.arm.S \
 	src/opts/SkBitmapProcState_opts_arm.cpp \
 	src/opts/SkBlitMask_opts_arm.cpp \
 	src/opts/SkBlitRow_opts_arm.cpp \
@@ -669,6 +671,9 @@ LOCAL_SRC_FILES_arm += \
 
 ifeq ($(ARCH_ARM_HAVE_NEON), true)
 LOCAL_SRC_FILES_arm += \
+	src/opts/S32_Opaque_D32_filter_DX_shaderproc_neon.cpp \
+	src/opts/SkBitmapProcState_matrix_merge.cpp \
+	src/opts/S32A_Opaque_BlitRow32_neon.S \
 	src/opts/SkBitmapProcState_arm_neon.cpp \
 	src/opts/SkBitmapProcState_matrixProcs_neon.cpp \
 	src/opts/SkBlitMask_opts_arm_neon.cpp \
@@ -680,7 +685,8 @@ LOCAL_SRC_FILES_arm += \
 	src/opts/SkXfermode_opts_arm_neon.cpp
 
 LOCAL_CFLAGS_arm += \
-	-DSK_ARM_HAS_NEON
+	-DSK_ARM_HAS_NEON \
+	-D__ARM_HAVE_NEON
 
 endif
 
@@ -763,7 +769,7 @@ include $(BUILD_SHARED_LIBRARY)
 #
 
 # benchmark (timings)
-include $(BASE_PATH)/bench/Android.mk
+#include $(BASE_PATH)/bench/Android.mk
 
 # diamond-master (one test to rule them all)
-include $(BASE_PATH)/dm/Android.mk
+#include $(BASE_PATH)/dm/Android.mk

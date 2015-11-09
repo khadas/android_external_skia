@@ -10,24 +10,26 @@
 
 void sk_memset16_neon(uint16_t dst[], uint16_t value, int count);
 void sk_memset32_neon(uint32_t dst[], uint32_t value, int count);
+#if defined(SK_CPU_LENDIAN)
+extern "C" void arm_memset16(uint16_t* dst, uint16_t value, int count);
+extern "C" void arm_memset32(uint32_t* dst, uint32_t value, int count);
+#endif
 
 SkMemset16Proc SkMemset16GetPlatformProc() {
-#if SK_ARM_NEON_IS_ALWAYS
-    return sk_memset16_neon;
-#elif SK_ARM_NEON_IS_DYNAMIC
-    return sk_cpu_arm_has_neon() ? sk_memset16_neon : nullptr;
+    // FIXME: memset.arm.S is using syntax incompatible with XCode
+#if !defined(SK_CPU_LENDIAN) || defined(SK_BUILD_FOR_IOS)
+    return NULL;
 #else
-    return nullptr;
+    return arm_memset16;
 #endif
 }
 
 SkMemset32Proc SkMemset32GetPlatformProc() {
-#if SK_ARM_NEON_IS_ALWAYS
-    return sk_memset32_neon;
-#elif SK_ARM_NEON_IS_DYNAMIC
-    return sk_cpu_arm_has_neon() ? sk_memset32_neon : nullptr;
+    // FIXME: memset.arm.S is using syntax incompatible with XCode
+#if !defined(SK_CPU_LENDIAN) || defined(SK_BUILD_FOR_IOS)
+    return NULL;
 #else
-    return nullptr;
+    return arm_memset32;
 #endif
 }
 

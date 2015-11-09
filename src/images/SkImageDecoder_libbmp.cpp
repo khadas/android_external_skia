@@ -14,16 +14,18 @@
 #include "SkStream.h"
 #include "SkStreamPriv.h"
 #include "SkTDArray.h"
+#include <cutils/properties.h>
 
 class SkBMPImageDecoder : public SkImageDecoder {
 public:
-    SkBMPImageDecoder() {}
+    SkBMPImageDecoder();
 
     Format getFormat() const override {
         return kBMP_Format;
     }
 
 protected:
+    int mMaxDecodeWidth;
     Result onDecode(SkStream* stream, SkBitmap* bm, Mode mode) override;
 
 private:
@@ -92,14 +94,25 @@ private:
     bool fJustBounds;
 };
 
+SkBMPImageDecoder::SkBMPImageDecoder(){
+
+    char value[PROPERTY_VALUE_MAX];
+    property_get("ro.skia.max.decodesize", value, "16383");
+    mMaxDecodeWidth = atoi(value);
+}
+
 SkImageDecoder::Result SkBMPImageDecoder::onDecode(SkStream* stream, SkBitmap* bm, Mode mode) {
     // First read the entire stream, so that all of the data can be passed to
     // the BmpDecoderHelper.
 
     // Allocated space used to hold the data.
+    size_t length = stream->getLength();
+    if ((int)length > mMaxDecodeWidth*mMaxDecodeWidth*3+1024) {
+        return kFailure;
+    }
     SkAutoMalloc storage;
     // Byte length of all of the data.
-    const size_t length = SkCopyStreamToStorage(&storage, stream);
+    length = SkCopyStreamToStorage(&storage, stream);
     if (0 == length) {
         return kFailure;
     }
@@ -110,7 +123,7 @@ SkImageDecoder::Result SkBMPImageDecoder::onDecode(SkStream* stream, SkBitmap* b
     // Now decode the BMP into callback's rgb() array [r,g,b, r,g,b, ...]
     {
         image_codec::BmpDecoderHelper helper;
-        const int max_pixels = 16383*16383; // max width*height
+        const int max_pixels = mMaxDecodeWidth*mMaxDecodeWidth; // max width*height
         if (!helper.DecodeImage((const char*)storage.get(), length,
                                 max_pixels, &callback)) {
             return kFailure;

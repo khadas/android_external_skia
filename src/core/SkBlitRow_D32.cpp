@@ -15,8 +15,75 @@
 static void S32_Opaque_BlitRow32(SkPMColor* SK_RESTRICT dst,
                                  const SkPMColor* SK_RESTRICT src,
                                  int count, U8CPU alpha) {
+#if defined(__aarch64__)
+    /*
+     * TODO: optimize for AARCH64
+     */
     SkASSERT(255 == alpha);
     sk_memcpy32(dst, src, count);
+#else
+    /*
+     * tao.zeng@amlogic.com, src and dst are algined by 4
+     */
+    asm volatile (
+        "cmp        %[count], #0                    \n"
+        "it         eq                              \n"
+        "bxeq       lr                              \n"                 // if count == 0, return
+        "pld        [%[src], #32]                   \n"
+        "tst        %[src], #0x04                   \n"                 // make aligne to 8 bytes
+        "ittt       ne                              \n"
+        "ldrne      r12, [%[src]], #4               \n"
+        "strne      r12, [%[dst]], #4               \n"
+        "subne      %[count], %[count], #1          \n"
+        "cmp        %[count], #16                   \n"                 //
+        "blt        S32_Opaque_BlitRow32_less16     \n"                 //
+        "pld        [%[src], #64]                   \n"
+        "sub        %[count], #16                   \n"
+    "S32_Opaque_BlitRow32_loop16:                   \n"
+        "vldmia     %[src]!, {q0, q1, q2, q3}       \n"
+        "pld        [%[src], #64]                   \n"
+        "pld        [%[src], #96]                   \n"
+        "subs       %[count], %[count], #16         \n"
+        "vstmia     %[dst]!, {q0, q1, q2, q3}       \n"
+        "bge        S32_Opaque_BlitRow32_loop16     \n"
+        "adds       %[count], %[count], #16         \n"
+        "cmp        %[count], #0                    \n"
+        "it         eq                              \n"
+        "bxeq       lr                              \n"
+
+    "S32_Opaque_BlitRow32_less16:                   \n"
+        "cmp        %[count], #8                    \n"
+        "blt        S32_Opaque_BlitRow32_less8      \n"
+        "vldmia     %[src]!, {q0, q1}               \n"
+        "subs       %[count], %[count], #8          \n"
+        "vstmia     %[dst]!, {q0, q1}               \n"
+        "it         eq                              \n"
+        "bxeq       lr                              \n"
+    "S32_Opaque_BlitRow32_less8:                    \n"
+        "cmp        %[count], #4                    \n"
+        "blt        S32_Opaque_BlitRow32_less4      \n"
+        "vldmia     %[src]!, {d0, d1}               \n"
+        "subs       %[count], %[count], #4          \n"
+        "vstmia     %[dst]!, {d0, d1}               \n"
+        "it         eq                              \n"
+        "bxeq       lr                              \n"
+    "S32_Opaque_BlitRow32_less4:                    \n"
+        "cmp        %[count], #2                    \n"
+        "itt        ge                              \n"
+        "ldmge      %[src]!, {%[alpha], r12}        \n"
+        "subges     %[count], #2                    \n"
+        "it         ge                              \n"
+        "stmge      %[dst]!, {%[alpha], r12}        \n"
+        "it         eq                              \n"
+        "bxeq       lr                              \n"
+        "ldr        r12, [%[src]], #4               \n"
+        "str        r12, [%[dst]], #4               \n"
+        "bx         lr                              \n"
+        :
+        :[src] "r" (src), [dst] "r" (dst), [count] "r" (count), [alpha] "r" (alpha)
+        :"cc", "memory", "r12"
+    );
+#endif
 }
 
 static void S32_Blend_BlitRow32(SkPMColor* SK_RESTRICT dst,
@@ -139,19 +206,108 @@ SkBlitRow::Proc32 SkBlitRow::Factory32(unsigned flags) {
 //
 // blend_256_round_alt is our currently blessed algorithm.  Please use it or an analogous one.
 void SkBlitRow::Color32(SkPMColor dst[], const SkPMColor src[], int count, SkPMColor color) {
-    switch (SkGetPackedA32(color)) {
-        case   0: memmove(dst, src, count * sizeof(SkPMColor)); return;
-        case 255: sk_memset32(dst, color, count);               return;
+    if (count > 0) {
+        if (0 == color) {
+            if (src != dst) {
+                memcpy(dst, src, count * sizeof(SkPMColor));
+            }
+            return;
+        }
+        unsigned colorA = SkGetPackedA32(color);
+        if (255 == colorA) {
+            sk_memset32(dst, color, count);
+        } else {
+            unsigned scale = 256 - SkAlpha255To256(colorA);
+        #if defined(__ARM_HAVE_NEON) && !defined(__aarch64__)
+            /*
+             * tao.zeng@amlogic.com, use NEON to optimize these funciton
+             */
+            // tao.zeng, alpha will not be 256, because SkAlpha255To256(colorA);
+            asm volatile (
+                /*
+                 * regigster allocate
+                 * q0   --> scale
+                 * q1   --> wide color
+                 * q2 - q3 --> src0 -- src8
+                 */
+                "vdup.32    d2, %[color]                        \n"
+                "vdup.8     q0, %[scale]                        \n"     // q0 = [scale].8
+                "pld        [%[src], #128]                      \n"     // preload data
+                "cmp        %[count], #8                        \n"
+                "vshll.u8   q1, d2, #8                          \n"     // q1 = [color 00].16
+                "blt        SkBlitRow_Color32_less_8            \n"
+                // main loop
+            "SkBlitRow_Color32_loop_8:                          \n"
+                "vldmia     %[src]!, {d4, d5, d6, d7}           \n"     // load 8 src data
+                "pld        [%[src], #128]                      \n"
+                "sub        %[count], %[count], #8              \n"
+                "cmp        %[count], #8                        \n"
+                "vmull.u8   q8, d4, d0                          \n"     // multiple scale
+                "vmull.u8   q9, d5, d0                          \n"
+                "vmull.u8   q10, d6, d0                         \n"
+                "vmull.u8   q11, d7, d0                         \n"
+                "vadd.u16   q8, q8, q1                          \n"     // add src color
+                "vadd.u16   q9, q9, q1                          \n"
+                "vadd.u16   q10, q10, q1                        \n"
+                "vadd.u16   q11, q11, q1                        \n"
+                "vshrn.i16  d4, q8, #8                          \n"     // narrow result
+                "vshrn.i16  d5, q9, #8                          \n"
+                "vshrn.i16  d6, q10, #8                         \n"
+                "vshrn.i16  d7, q11, #8                         \n"
+                "vstmia     %[dst]!, {d4, d5, d6, d7}           \n"
+                "bge        SkBlitRow_Color32_loop_8            \n"
+                "cmp        %[count], #0                        \n"
+                "beq        out                                 \n"
+
+            "SkBlitRow_Color32_less_8:                          \n"
+                "cmp        %[count], #4                        \n"
+                "blt        SkBlitRow_Color32_less_4            \n"
+
+                "vldmia     %[src]!, {d4, d5}                   \n"
+                "subs       %[count], %[count], #4              \n"
+                "vmull.u8   q8, d4, d0                          \n"     // multiple scale
+                "vmull.u8   q9, d5, d0                          \n"
+                "vadd.u16   q8, q8, q1                          \n"     // add src color
+                "vadd.u16   q9, q9, q1                          \n"
+                "vshrn.i16  d4, q8, #8                          \n"     // narrow result
+                "vshrn.i16  d5, q9, #8                          \n"
+                "vstmia     %[dst]!, {d4, d5}                   \n"
+                "beq        out                                 \n"
+
+            "SkBlitRow_Color32_less_4:                          \n"
+                "cmp        %[count], #2                        \n"
+                "blt        SkBlitRow_Color32_less_2            \n"
+                "vldmia     %[src]!, {d4}                       \n"
+                "vmull.u8   q8, d4, d0                          \n"     // multiple scale
+                "subs       %[count], %[count], #2              \n"
+                "vadd.u16   q8, q8, q1                          \n"     // add src color
+                "vshrn.i16  d4, q8, #8                          \n"     // narrow result
+                "vstmia     %[dst]!, {d4}                       \n"
+                "beq        out                                 \n"
+
+            "SkBlitRow_Color32_less_2:                          \n"
+                "vld1.32    {d4[0]}, [%[src]]!                  \n"
+                "vmull.u8   q8, d4, d0                          \n"     // multiple scale
+                "vadd.u16   q8, q8, q1                          \n"     // add src color
+                "vshrn.i16  d4, q8, #8                          \n"     // narrow result
+                "vst1.32    {d4[0]}, [%[dst]]!                  \n"
+
+            "out:                                               \n"
+                :
+                : [color] "r"(color), [dst] "r" (dst), [src] "r" (src), [scale] "r" (scale), [count] "r" (count)
+                : "memory"
+            );
+        #else
+            /*
+             * TODO: optimize for AARCH64
+             */
+            do {
+                *dst = color + SkAlphaMulQ(*src, scale);
+                src += 1;
+                dst += 1;
+            } while (--count);
+        #endif
+        }
     }
-
-    unsigned invA = 255 - SkGetPackedA32(color);
-    invA += invA >> 7;
-    SkASSERT(invA < 256);  // We've already handled alpha == 0 above.
-
-    Sk16h colorHighAndRound = Sk4px(color).widenHi() + Sk16h(128);
-    Sk16b invA_16x(invA);
-
-    Sk4px::MapSrc(count, dst, src, [&](const Sk4px& src4) -> Sk4px {
-        return src4.mulWiden(invA_16x).addNarrowHi(colorHighAndRound);
-    });
 }
+
