@@ -248,4 +248,21 @@ static inline U8CPU Filter_8(unsigned x, unsigned y,
 #define POSTAMBLE(state)
 #include "SkBitmapProcState_shaderproc.h"
 
+#if !SK_ARM_NEON_IS_NONE
+#define TILEX_PROCF(fx, max)    SkClampMax((fx) >> 16, max)
+#define TILEY_PROCF(fy, max)    SkClampMax((fy) >> 16, max)
+#define TILEX_LOW_BITS(fx, max) (((fx) >> 12) & 0xF)
+#define TILEY_LOW_BITS(fy, max) (((fy) >> 12) & 0xF)
+
+#undef FILTER_PROC
+#define FILTER_PROC(x, y, a, b, c, d, dst)   Filter_32_opaque(x, y, a, b, c, d, dst)
+#define MAKENAME(suffix)        NAME_WRAP(S32_Opaque_D32 ## suffix)
+#define SRCTYPE                 uint32_t
+#define DSTTYPE                 uint32_t
+#define SRC_TO_FILTER(src)      src
+#define S32_OPAQUE_D32_FILTER_DX_NEON
+#include "SkBitmapProcState_shaderproc_neon.h"
+#undef S32_OPAQUE_D32_FILTER_DX_NEON
+#endif //SK_ARM_NEON_IS_NONE
+
 #undef NAME_WRAP

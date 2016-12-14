@@ -1558,6 +1558,13 @@ const SkBlitRow::ColorProc16 sk_blitrow_platform_565_colorprocs_arm_neon[] = {
     Color32A_D565_neon,    // Color32A_D565_Dither
 };
 
+#if defined(__arm__)
+extern "C" {
+    void S32A_Opaque_BlitRow32_neon_o(SkPMColor* SK_RESTRICT dst,
+                                const SkPMColor* SK_RESTRICT src,
+                                int count, U8CPU alpha);
+}
+#endif
 const SkBlitRow::Proc32 sk_blitrow_platform_32_procs_arm_neon[] = {
     nullptr,   // S32_Opaque,
     S32_Blend_BlitRow32_neon,        // S32_Blend,
@@ -1572,7 +1579,11 @@ const SkBlitRow::Proc32 sk_blitrow_platform_32_procs_arm_neon[] = {
      */
 #if SK_A32_SHIFT == 24
     // This proc assumes the alpha value occupies bits 24-32 of each SkPMColor
+#if defined(__arm__)
+    S32A_Opaque_BlitRow32_neon_o,
+#else
     S32A_Opaque_BlitRow32_neon_src_alpha,   // S32A_Opaque,
+#endif
 #else
     S32A_Opaque_BlitRow32_neon,     // S32A_Opaque,
 #endif
