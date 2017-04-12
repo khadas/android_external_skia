@@ -14,8 +14,23 @@ SkPMColor SkPreMultiplyARGB(U8CPU a, U8CPU r, U8CPU g, U8CPU b) {
 }
 
 SkPMColor SkPreMultiplyColor(SkColor c) {
+#if 1
+    int a, r, g, b;
+    a = SkColorGetA(c);
+    if (a == 255)
+        return c;
+
+    r = SkColorGetR(c);
+    g = SkColorGetG(c);
+    b = SkColorGetB(c);
+    r = SkMulDiv255Round(r, a);
+    g = SkMulDiv255Round(g, a);
+    b = SkMulDiv255Round(b, a);
+    return SkPackARGB32(a, r, g, b);
+#else
     return SkPremultiplyARGBInline(SkColorGetA(c), SkColorGetR(c),
                                    SkColorGetG(c), SkColorGetB(c));
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
