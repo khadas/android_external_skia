@@ -748,9 +748,6 @@ LOCAL_CFLAGS_arm += \
 
 ifeq ($(ARCH_ARM_HAVE_NEON), true)
 LOCAL_SRC_FILES_arm += \
-	src/opts/S32_Opaque_D32_filter_DX_shaderproc_neon.cpp \
-	src/opts/SkBitmapProcState_matrix_merge.cpp \
-	src/opts/S32A_Opaque_BlitRow32_neon.S \
 	src/opts/SkBitmapProcState_arm_neon.cpp \
 	src/opts/SkBitmapProcState_matrixProcs_neon.cpp \
 	src/opts/SkBlitMask_opts_arm_neon.cpp \
@@ -806,8 +803,6 @@ LOCAL_SRC_FILES_mips64 += \
 	src/opts/SkBlitRow_opts_none.cpp
 
 LOCAL_SRC_FILES_arm64 += \
-	src/opts/S32_Opaque_D32_filter_DX_shaderproc_neon64.cpp \
-	src/opts/SkBitmapProcState_matrix_merge.cpp \
 	src/opts/SkBitmapProcState_arm_neon.cpp \
 	src/opts/SkBitmapProcState_matrixProcs_neon.cpp \
 	src/opts/SkBitmapProcState_opts_arm.cpp \
