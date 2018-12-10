@@ -61,6 +61,16 @@ static bool read_mbf(SkStream* stream, uint64_t* value) {
 
 static bool read_header(SkStream* stream, SkISize* size) {
     {
+        uint32_t header;
+        if (stream->read(&header, 4) == 4) {
+            stream->move(-4);
+            if (header == 0xB3010000 || header == 0xBA010000) {
+                SkDebugf("SkWbmp: stream is mpeg format, skip it!\n");
+                return false;
+            }
+        }
+    }
+    {
         uint8_t data;
         if (!read_byte(stream, &data) || data != 0) { // unknown type
             return false;
