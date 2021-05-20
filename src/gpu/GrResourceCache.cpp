@@ -25,6 +25,49 @@
 #include "src/gpu/GrTracing.h"
 #include "src/gpu/SkGr.h"
 
+#if defined(ANDROID)
+    #include <fcntl.h>
+    #include <cutils/properties.h>
+#endif
+
+static int32_t __getOomAdj() {
+    int32_t fd, len;
+    #define MAX_READ_LEN 64
+    char str[MAX_READ_LEN];
+    memset(str, 0, MAX_READ_LEN);
+    if ((fd = open("/proc/self/oom_score_adj", O_RDONLY)) < 0) {
+        return 0;
+    }
+
+    len = read(fd, str, MAX_READ_LEN);
+    if (len <= 0) {
+        close(fd);
+        return 0;
+    }
+    close(fd);
+
+    if (len != MAX_READ_LEN) {
+        return atoi(str);
+    }
+
+    return 0;
+}
+
+static bool isLowRamDevice() {
+    char prop[PROP_VALUE_MAX];
+    property_get("ro.config.low_ram", prop, "false");
+    return strncmp(prop, "true", 4) == 0;
+}
+
+static bool shouldOverrideCacheLimit() {
+    if (!isLowRamDevice()) return false;
+
+    if (__getOomAdj() < 0 || __getOomAdj() >= 900)
+        return true;
+
+    return false;
+}
+
 DECLARE_SKMESSAGEBUS_MESSAGE(GrUniqueKeyInvalidatedMessage);
 
 DECLARE_SKMESSAGEBUS_MESSAGE(GrTextureFreedMessage);
@@ -124,6 +167,7 @@ GrResourceCache::~GrResourceCache() {
 }
 
 void GrResourceCache::setLimit(size_t bytes) {
+    if (shouldOverrideCacheLimit()) bytes = 1024;
     fMaxBytes = bytes;
     this->purgeAsNeeded();
 }
@@ -428,6 +472,20 @@ void GrResourceCache::notifyRefCntReachedZero(GrGpuResource* resource) {
     fPurgeableQueue.insert(resource);
     resource->cacheAccess().setTimeWhenResourceBecomePurgeable();
     fPurgeableBytes += resource->gpuMemorySize();
+
+    // no need keep cache for persist/system and less important app.
+    // persist app almost run in background, do not keep cached memory for it, it's wasted too much.
+    // only for low ram devices
+#if defined(ANDROID)
+    {
+        if (shouldOverrideCacheLimit()) {
+            SkDebugf("directly release gpu cache!");
+            resource->cacheAccess().release();
+            this->validate();
+            return;
+        }
+    }
+#endif
 
     bool hasUniqueKey = resource->getUniqueKey().isValid();
 
