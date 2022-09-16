@@ -50,8 +50,30 @@ license {
     ],
 }
 
+bootstrap_go_package {
+    name: "soong-skia_rk",
+    pkgPath: "android/soong/skia_rk",
+    deps: [
+        "blueprint",
+        "blueprint-pathtools",
+        "soong",
+        "soong-android",
+        "soong-cc",
+        "soong-genrule",
+    ],
+    srcs: [
+          "Android.go",
+    ],
+    pluginFor: ["soong_build"],
+}
+
+cc_skia_rk {
+    name: "skia_rk_defaults",
+}
+
 cc_defaults {
     name: "skia_arch_defaults",
+    defaults: ["skia_rk_defaults"],
     arch: {
         arm: {
             srcs: [
